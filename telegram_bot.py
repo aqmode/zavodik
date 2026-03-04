@@ -160,53 +160,43 @@ def send_clips_to_telegram(
 ) -> int:
     """
     Отправляет список клипов в Telegram.
-    Для каждого клипа генерирует AI метаданные (название, описание, хештеги).
-    
+    Caption = название исходного видео + фиксированные хештеги.
+
     clips: список путей к .mp4 файлам
-    video_title: название исходного видео (для AI)
-    topic: тема контента (для AI)
+    video_title: название исходного YouTube-видео
+    topic: не используется (оставлен для совместимости)
     delay_between: задержка между отправками (секунды)
-    
+
     Возвращает количество успешно отправленных.
     """
     if not clips:
         print("  ⚠ Нет клипов для отправки")
         return 0
 
-    # Генерируем метаданные через AI
-    try:
-        from ai_module import generate_video_metadata
-        print(f"\n📱 Генерирую метаданные для Telegram...")
-        metadata = generate_video_metadata(video_title, topic)
-        caption = metadata["caption"]
-        print(f"  📝 Название: {metadata['title']}")
-        print(f"  📝 Описание: {metadata['description']}")
-        print(f"  📝 Хештеги: {metadata['hashtags']}")
-    except Exception as e:
-        print(f"  ⚠ Ошибка генерации метаданных: {e}")
-        # Фоллбэк caption
-        caption = f"{video_title}\n#reddit #реддит #реддитистории"
+    HASHTAGS = "#reddit #реддит #реддитистории #апвоут #тучныйжаб"
+
+    base_caption = f"{video_title}\n\n{HASHTAGS}"
 
     sent = 0
     total = len(clips)
 
     print(f"\n📤 Отправляю {total} клипов в Telegram...")
+    print(f"  📝 Название: {video_title}")
+    print(f"  📝 Хештеги: {HASHTAGS}")
 
     for i, clip_path in enumerate(clips):
-        # Для каждого клипа добавляем номер части
         if total > 1:
-            clip_caption = f"{caption}\n\n📎 Часть {i+1}/{total}"
+            clip_caption = f"{base_caption}\n\n📎 Часть {i+1}/{total}"
         else:
-            clip_caption = caption
+            clip_caption = base_caption
 
         print(f"  [{i+1}/{total}] {os.path.basename(clip_path)}...", end=" ", flush=True)
 
         if send_video_to_telegram(clip_path, clip_caption):
             sent += 1
         else:
-            print()  # новая строка после ошибки
+            print()
 
-        # Задержка между отправками (чтобы не словить rate limit)
         if i < total - 1 and delay_between > 0:
             time.sleep(delay_between)
 
