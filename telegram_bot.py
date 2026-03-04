@@ -77,6 +77,10 @@ def send_message_to_telegram(text: str) -> bool:
         return False
 
 
+# Алиас для отправки служебных уведомлений
+send_notification = send_message_to_telegram
+
+
 def send_video_to_telegram(video_path: str, caption: str = "") -> bool:
     """
     Отправляет видео файл в Telegram с caption.

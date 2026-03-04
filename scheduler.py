@@ -66,104 +66,41 @@ def _log_step(msg: str):
 
 # ─── шаги пайплайна ─────────────────────────────────────────────────────────
 
-def _ensure_bg_videos_downloaded():
-    """
-    Проверяет categories.json и скачивает фоновые видео,
-    которые ещё не скачаны в logs/background/<category>/.
-    """
-    from bot_listener import load_categories
-    import subprocess
-
-    cats = load_categories()
-    if not cats:
-        return
-
-    proxy = os.getenv("YTDLP_PROXY") or os.getenv("PROXY") or None
-    cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
-    deno_bin = os.path.join(os.path.expanduser("~"), ".deno", "bin")
-    deno_exe = os.path.join(deno_bin, "deno") if os.name != "nt" else os.path.join(deno_bin, "deno.exe")
-
-    for cat in cats:
-        name = cat["name"]
-        urls = cat.get("urls", [])
-        if not urls:
-            continue
-
-        bg_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              "logs", "background", name)
-        os.makedirs(bg_dir, exist_ok=True)
-
-        for i, url in enumerate(urls):
-            out_path = os.path.join(bg_dir, f"bg_{i:03d}.%(ext)s")
-            # Проверяем, уже ли скачан
-            existing = [f for f in os.listdir(bg_dir)
-                        if f.startswith(f"bg_{i:03d}") and not f.endswith(".part")]
-            if existing:
-                continue
-
-            log.info(f"[BG] Скачиваю фон {name}/bg_{i:03d}: {url}")
-            cmd = [
-                "yt-dlp",
-                "--output", out_path,
-                "--no-playlist",
-                "--newline",
-                "--format", "bestvideo[ext=mp4][height<=1080]/bestvideo[height<=1080]/best",
-            ]
-            if os.path.exists(deno_exe):
-                cmd += ["--js-runtimes", f"deno:{deno_exe}"]
-            if proxy:
-                cmd += ["--proxy", proxy]
-            if os.path.exists(cookies_file):
-                cmd += ["--cookies", cookies_file]
-            cmd.append(url)
-
-            env = os.environ.copy()
-            env["PATH"] = env.get("PATH", "") + os.pathsep + deno_bin
-            try:
-                subprocess.run(cmd, env=env, timeout=300)
-            except Exception as e:
-                log.warning(f"[BG] Ошибка скачивания {url}: {e}")
-
-
 def _get_bg_by_category():
     """
     Возвращает dict {category: [список путей к видео]}.
-    Приоритет: categories.json → logs/background/ (старый способ).
+    Читает файлы из categories/<name>/ (туда пользователь кидает mp4 через бота).
     """
-    from bot_listener import load_categories
+    from bot_listener import load_categories, list_videos_in_category, _cat_dir
 
     result = {}
-    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "background")
-
-    # Из categories.json
     cats = load_categories()
     for cat in cats:
         name = cat["name"]
-        cat_dir = os.path.join(base, name)
+        cat_dir = _cat_dir(name)
         if os.path.isdir(cat_dir):
             videos = sorted([
                 os.path.join(cat_dir, f)
-                for f in os.listdir(cat_dir)
-                if f.lower().endswith((".mp4", ".webm", ".mkv", ".mov"))
+                for f in list_videos_in_category(name)
             ])
             if videos:
                 result[name] = videos
 
-    # Фолбэк: старые папки не в categories.json
-    if os.path.isdir(base):
-        for entry in os.listdir(base):
-            if entry not in result:
-                cat_dir = os.path.join(base, entry)
-                if os.path.isdir(cat_dir):
-                    videos = sorted([
-                        os.path.join(cat_dir, f)
-                        for f in os.listdir(cat_dir)
-                        if f.lower().endswith((".mp4", ".webm", ".mkv", ".mov"))
-                    ])
-                    if videos:
-                        result[entry] = videos
-
     return result
+
+
+def _notify_cookies_expired():
+    """Отправляет уведомление в Telegram что куки протухли."""
+    try:
+        from telegram_bot import send_notification
+        send_notification(
+            "⚠️ <b>Куки YouTube протухли!</b>\n\n"
+            "YouTube требует авторизацию — скачивание аудио невозможно.\n\n"
+            "Обновите cookies.txt через бота:\n"
+            "/start → 🍪 Cookies → 📋 Вставить текст cookies"
+        )
+    except Exception as e:
+        log.error(f"Не удалось отправить уведомление о куках: {e}")
 
 
 def _process_one_video(video: dict, video_index: int) -> list:
@@ -173,7 +110,7 @@ def _process_one_video(video: dict, video_index: int) -> list:
       2. Нарезка + субтитры + сборка (3 клипа)
     Возвращает список путей к готовым клипам.
     """
-    from downloader import download_audio_from_youtube, write_log
+    from downloader import download_audio_from_youtube, write_log, CookiesExpiredError
     from video_processor import process_single_video
 
     _reload_env()
@@ -181,15 +118,18 @@ def _process_one_video(video: dict, video_index: int) -> list:
 
     # 1. Скачиваем аудио
     _log_step(f"[Видео {video_index+1}] ⬇ Скачиваю аудио: {video['url']}")
-    audio_path = download_audio_from_youtube(video["url"], index=video_index)
+    try:
+        audio_path = download_audio_from_youtube(video["url"], index=video_index)
+    except CookiesExpiredError:
+        log.error(f"[Видео {video_index+1}] Куки протухли — YouTube требует авторизацию!")
+        _notify_cookies_expired()
+        return []
+
     if not audio_path:
         log.error(f"[Видео {video_index+1}] Не удалось скачать аудио!")
         return []
 
-    # 2. Скачиваем недостающие фоновые видео из categories.json
-    _ensure_bg_videos_downloaded()
-
-    # 3. Получаем доступные фоны
+    # 2. Получаем доступные фоны
     bg_by_category = _get_bg_by_category()
     if not bg_by_category:
         log.error("Нет фоновых видео! Добавьте через бота: /bg → Добавить видео")

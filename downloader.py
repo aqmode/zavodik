@@ -14,6 +14,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "logs")
+
+
+class CookiesExpiredError(Exception):
+    """Поднимается когда YouTube отклонил куки (требует авторизацию)."""
+    pass
+
 BACKGROUNDS_DIR = os.getenv("BACKGROUNDS_DIR", "backgrounds")
 AUDIO_DIR = os.path.join(DOWNLOAD_DIR, "audio")
 BG_BASE_DIR = os.path.join(DOWNLOAD_DIR, "background")
@@ -122,7 +128,16 @@ def download_audio_from_youtube(url: str, index: int = 0) -> str | None:
         print(f"  Скачиваю аудио: {url}")
         if proxy:
             print(f"  Прокси: {proxy.split('@')[-1]}")  # показываем только host:port
-        result = subprocess.run(cmd, text=True, env=env)
+        result = subprocess.run(cmd, text=True, env=env,
+                                capture_output=False, stderr=subprocess.PIPE)
+
+        # Детектируем протухшие/невалидные куки
+        stderr_out = result.stderr or ""
+        if "Sign in to confirm" in stderr_out or "bot" in stderr_out.lower() and "cookies" in stderr_out.lower():
+            print(f"  ✗ YouTube требует авторизацию — куки протухли!")
+            write_log(f"AUDIO ERR {url}  //  cookies expired")
+            # Сигнализируем об этом через специальное исключение
+            raise CookiesExpiredError("YouTube требует авторизацию — обновите cookies.txt")
 
         # Ищем скачанный файл
         expected = os.path.join(AUDIO_DIR, f"audio_{index:03d}.mp3")

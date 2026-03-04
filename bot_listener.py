@@ -8,9 +8,9 @@ Telegram-бот для управления TikTok Scheduler'ом.
   /channels   — управление YouTube-каналами
   /bg         — управление категориями фоновых видео
 
-Структура категорий фонов (categories.json):
-  [{"name": "glass_cleaning", "urls": ["yt-url1", ...]}, ...]
-  Папки: logs/background/<name>/
+Структура категорий фонов:
+  categories.json  → [{"name": "glass_cleaning"}, ...]
+  Папки:           → categories/<name>/  (туда боту кидают mp4-файлы)
 """
 
 import os
@@ -66,37 +66,54 @@ def get_category(name: str):
     return None
 
 
+def _cat_dir(name: str) -> str:
+    """Папка категории: categories/<name>/"""
+    return os.path.join(_root(), "categories", name)
+
+
 def add_category(name: str):
     cats = load_categories()
     if not any(c["name"] == name for c in cats):
-        cats.append({"name": name, "urls": []})
+        cats.append({"name": name})
         save_categories(cats)
-    bg_dir = os.path.join(_root(), "logs", "background", name)
-    os.makedirs(bg_dir, exist_ok=True)
+    os.makedirs(_cat_dir(name), exist_ok=True)
 
 
 def remove_category(name: str):
     save_categories([c for c in load_categories() if c["name"] != name])
+    # папку не удаляем — видео остаются на диске
 
 
 def add_video_to_category(name: str, url: str) -> bool:
-    cats = load_categories()
-    for c in cats:
-        if c["name"] == name:
-            if url not in c["urls"]:
-                c["urls"].append(url)
-                save_categories(cats)
-            return True
-    return False
+    """Устарело — оставлено для совместимости. Видео теперь кидают файлом."""
+    return get_category(name) is not None
 
 
 def remove_video_from_category(name: str, idx: int):
-    cats = load_categories()
-    for c in cats:
-        if c["name"] == name and 0 <= idx < len(c["urls"]):
-            c["urls"].pop(idx)
-            save_categories(cats)
-            return
+    """Удаляет видео-файл из папки категории по индексу."""
+    cat_dir = _cat_dir(name)
+    if not os.path.isdir(cat_dir):
+        return
+    videos = sorted([
+        f for f in os.listdir(cat_dir)
+        if f.lower().endswith((".mp4", ".webm", ".mkv", ".mov"))
+    ])
+    if 0 <= idx < len(videos):
+        try:
+            os.remove(os.path.join(cat_dir, videos[idx]))
+        except OSError:
+            pass
+
+
+def list_videos_in_category(name: str) -> list[str]:
+    """Список имён файлов в папке категории."""
+    cat_dir = _cat_dir(name)
+    if not os.path.isdir(cat_dir):
+        return []
+    return sorted([
+        f for f in os.listdir(cat_dir)
+        if f.lower().endswith((".mp4", ".webm", ".mkv", ".mov"))
+    ])
 
 
 # ─── .env helpers ─────────────────────────────────────────────────────────────
@@ -195,7 +212,40 @@ def _menu_main(chat_id: str, message_id: int = None):
     markup = _kb(
         [("🎯 Сменить тему", "set_topic")],
         [("📺 YouTube-каналы", "menu_channels"), ("🖼 Фоны", "menu_bg")],
-        [("📊 Статус", "status")],
+        [("🍪 Cookies", "menu_cookies"), ("📊 Статус", "status")],
+    )
+    if message_id:
+        _edit(chat_id, message_id, text, markup)
+    else:
+        _send(chat_id, text, markup)
+
+
+def _menu_cookies(chat_id: str, message_id: int = None):
+    cookies_file = os.path.join(_root(), "cookies.txt")
+    exists = os.path.exists(cookies_file)
+    size = os.path.getsize(cookies_file) if exists else 0
+    mtime = ""
+    if exists:
+        import datetime
+        mtime = datetime.datetime.fromtimestamp(
+            os.path.getmtime(cookies_file)
+        ).strftime("%Y-%m-%d %H:%M")
+
+    text = (
+        "🍪 <b>Cookies</b>\n\n"
+        + (f"📄 Файл: <code>cookies.txt</code>\n"
+           f"📦 Размер: {size} байт\n"
+           f"🕐 Изменён: {mtime}" if exists else "⚠️ <b>cookies.txt не найден!</b>")
+        + "\n\n"
+        "Для обновления:\n"
+        "1. Откройте YouTube в браузере (войдите в аккаунт)\n"
+        "2. Расширение <b>Get cookies.txt LOCALLY</b>\n"
+        "3. Нажмите «📋 Вставить текст cookies»\n"
+        "4. Вставьте скопированный текст"
+    )
+    markup = _kb(
+        [("📋 Вставить текст cookies", "cookies_paste")],
+        [("🔙 Назад", "menu_main")],
     )
     if message_id:
         _edit(chat_id, message_id, text, markup)
@@ -230,14 +280,15 @@ def _menu_bg(chat_id: str, message_id: int = None):
     cats = load_categories()
     lines = ["🖼 <b>Категории фоновых видео</b>\n"]
     for c in cats:
-        cnt = len(c.get("urls", []))
+        cnt = len(list_videos_in_category(c["name"]))
         lines.append(f"• <b>{c['name']}</b> — {cnt} видео")
     if not cats:
         lines.append("<i>Категорий нет — создайте хотя бы одну</i>")
 
     btns = []
     for c in cats:
-        btns.append([{"text": f"📂 {c['name']} ({len(c.get('urls',[]))})",
+        cnt = len(list_videos_in_category(c["name"]))
+        btns.append([{"text": f"📂 {c['name']} ({cnt})",
                       "callback_data": f"bg_open_{c['name']}"}])
     btns.append([{"text": "➕ Новая категория", "callback_data": "bg_new"}])
     btns.append([{"text": "🔙 Назад", "callback_data": "menu_main"}])
@@ -255,19 +306,19 @@ def _menu_bg_cat(chat_id: str, cat_name: str, message_id: int = None):
         _send(chat_id, "❌ Категория не найдена.")
         return
 
-    urls = cat.get("urls", [])
-    lines = [f"📂 <b>{cat_name}</b>  ({len(urls)} видео)\n"]
-    for i, u in enumerate(urls, 1):
-        vid = _vid_id(u) or u[-20:]
-        lines.append(f"{i}. <code>{vid}</code>")
-    if not urls:
-        lines.append("<i>Видео нет — добавьте URL</i>")
+    videos = list_videos_in_category(cat_name)
+    lines = [f"📂 <b>{cat_name}</b>  ({len(videos)} видео)\n"]
+    for i, fname in enumerate(videos, 1):
+        lines.append(f"{i}. <code>{fname}</code>")
+    if not videos:
+        lines.append("<i>Видео нет — отправьте .mp4 файл(ы) в этот чат</i>\n"
+                     "<i>Сначала нажмите «📥 Выбрать эту категорию»</i>")
 
     btns = []
-    for i, u in enumerate(urls):
-        vid = _vid_id(u) or u[-15:]
-        btns.append([{"text": f"❌ {vid}", "callback_data": f"bgv_del_{cat_name}|{i}"}])
-    btns.append([{"text": "➕ Добавить видео", "callback_data": f"bg_add_vid_{cat_name}"}])
+    for i, fname in enumerate(videos):
+        short = fname[:20] + "…" if len(fname) > 20 else fname
+        btns.append([{"text": f"❌ {short}", "callback_data": f"bgv_del_{cat_name}|{i}"}])
+    btns.append([{"text": "📥 Слать видео сюда", "callback_data": f"bg_select_{cat_name}"}])
     btns.append([{"text": "🗑 Удалить категорию", "callback_data": f"bg_del_cat_{cat_name}"}])
     btns.append([{"text": "🔙 К категориям", "callback_data": "menu_bg"}])
     markup = {"inline_keyboard": btns}
@@ -289,7 +340,7 @@ def _menu_status(chat_id: str, message_id: int = None):
             used_count = sum(1 for line in f if line.strip())
     except Exception:
         used_count = 0
-    bg_count = sum(len(c.get("urls", [])) for c in cats)
+    bg_count = sum(len(list_videos_in_category(c["name"])) for c in cats)
     text = (
         "📊 <b>Статус</b>\n\n"
         f"📝 Тема: <b>{topic}</b>\n"
@@ -316,6 +367,52 @@ def _handle_message(message: dict):
     text = message.get("text", "").strip()
     st = _states.get(chat_id, {})
     state = st.get("state", "")
+
+    # ── приём видео-файла в категорию ──────────────────────────────
+    video_obj = message.get("video") or message.get("document")
+    if video_obj and state == "wait_bg_video_file":
+        cat_name = st.get("data", {}).get("cat", "")
+        _states.pop(chat_id, None)
+
+        # Скачиваем файл через getFile
+        file_id = video_obj.get("file_id", "")
+        orig_name = video_obj.get("file_name", f"{file_id}.mp4")
+        if not orig_name.lower().endswith((".mp4", ".mov", ".mkv", ".webm")):
+            orig_name += ".mp4"
+
+        cat_dir = _cat_dir(cat_name)
+        os.makedirs(cat_dir, exist_ok=True)
+        save_path = os.path.join(cat_dir, orig_name)
+
+        # Скачиваем через Telegram getFile
+        file_info = _api("getFile", {"file_id": file_id})
+        if file_info and file_info.get("file_path"):
+            import httpx
+            token = os.getenv("TELEGRAM_BOT_TOKEN")
+            proxy = os.getenv("PROXY") or None
+            dl_url = f"https://api.telegram.org/file/bot{token}/{file_info['file_path']}"
+            try:
+                kwargs = {"timeout": 300}
+                if proxy:
+                    kwargs["proxy"] = proxy
+                with httpx.Client(**kwargs) as client:
+                    resp = client.get(dl_url)
+                with open(save_path, "wb") as f:
+                    f.write(resp.content)
+                size_mb = os.path.getsize(save_path) / 1024 / 1024
+                _send(chat_id,
+                      f"✅ Видео сохранено в <b>{cat_name}</b>\n"
+                      f"📁 <code>{orig_name}</code> ({size_mb:.1f} МБ)\n\n"
+                      f"Можете отправить ещё видео или нажмите /bg")
+            except Exception as e:
+                _send(chat_id, f"❌ Ошибка сохранения: {e}")
+        else:
+            _send(chat_id,
+                  "❌ Не удалось получить файл от Telegram.\n"
+                  "Попробуйте отправить файл меньшего размера (до 50 МБ).")
+        # Остаёмся в состоянии — можно слать ещё видео
+        _states[chat_id] = {"state": "wait_bg_video_file", "data": {"cat": cat_name}}
+        return
 
     # ── диалоговые состояния ──
     if state == "wait_topic":
@@ -355,20 +452,34 @@ def _handle_message(message: dict):
             _send(chat_id, "⚠ Отменено.")
         return
 
-    if state == "wait_bg_video_url":
-        cat_name = st.get("data", {}).get("cat", "")
+    if state == "wait_cookies_text":
         _states.pop(chat_id, None)
-        if text and not text.startswith("/"):
-            url = text.strip()
-            if add_video_to_category(cat_name, url):
+        if text and not text.startswith("/") and "youtube" in text.lower():
+            cookies_file = os.path.join(_root(), "cookies.txt")
+            try:
+                with open(cookies_file, "w", encoding="utf-8") as f:
+                    f.write(text)
+                lines = [l for l in text.splitlines() if l.strip() and not l.startswith("#")]
                 _send(chat_id,
-                      f"✅ Видео добавлено в <b>{cat_name}</b>:\n<code>{url}</code>\n\n"
-                      f"⬇ Скачается при следующем цикле.")
-            else:
-                _send(chat_id, f"❌ Категория <b>{cat_name}</b> не найдена.")
-            _menu_bg_cat(chat_id, cat_name)
+                      f"✅ <b>cookies.txt обновлён!</b>\n"
+                      f"📦 Записано {len(lines)} записей cookie.")
+            except Exception as e:
+                _send(chat_id, f"❌ Ошибка записи файла: {e}")
+        elif text and not text.startswith("/"):
+            # Текст получен, но не похож на куки YouTube — всё равно сохраняем
+            cookies_file = os.path.join(_root(), "cookies.txt")
+            try:
+                with open(cookies_file, "w", encoding="utf-8") as f:
+                    f.write(text)
+                lines = [l for l in text.splitlines() if l.strip() and not l.startswith("#")]
+                _send(chat_id,
+                      f"✅ <b>cookies.txt обновлён!</b>\n"
+                      f"📦 Записано {len(lines)} строк.")
+            except Exception as e:
+                _send(chat_id, f"❌ Ошибка записи файла: {e}")
         else:
             _send(chat_id, "⚠ Отменено.")
+        _menu_cookies(chat_id)
         return
 
     # ── команды ──
@@ -399,6 +510,18 @@ def _handle_callback(callback: dict):
 
     elif data == "status":
         _menu_status(chat_id, message_id)
+
+    elif data == "menu_cookies":
+        _menu_cookies(chat_id, message_id)
+
+    elif data == "cookies_paste":
+        _states[chat_id] = {"state": "wait_cookies_text"}
+        _edit(chat_id, message_id,
+              "🍪 <b>Обновление cookies</b>\n\n"
+              "Вставьте полный текст из расширения <b>Get cookies.txt LOCALLY</b>\n\n"
+              "<i>Текст начинается с строки:</i>\n"
+              "<code># Netscape HTTP Cookie File</code>\n\n"
+              "⚠️ Просто вставьте весь скопированный текст:")
 
     elif data == "set_topic":
         _states[chat_id] = {"state": "wait_topic"}
@@ -444,12 +567,14 @@ def _handle_callback(callback: dict):
         _send(chat_id, f"🗑 Категория <b>{cat_name}</b> удалена.")
         _menu_bg(chat_id, message_id)
 
-    elif data.startswith("bg_add_vid_"):
-        cat_name = data[len("bg_add_vid_"):]
-        _states[chat_id] = {"state": "wait_bg_video_url", "data": {"cat": cat_name}}
+    elif data.startswith("bg_select_"):
+        cat_name = data[len("bg_select_"):]
+        _states[chat_id] = {"state": "wait_bg_video_file", "data": {"cat": cat_name}}
         _edit(chat_id, message_id,
-              f"➕ Введите YouTube-URL для категории <b>{cat_name}</b>:\n"
-              f"Пример: <code>https://www.youtube.com/watch?v=XXXXXXXXXXX</code>")
+              f"📥 <b>{cat_name}</b>\n\n"
+              f"Отправьте видео-файл(ы) (.mp4) прямо в этот чат.\n"
+              f"Можно отправить несколько подряд.\n\n"
+              f"Когда закончите — нажмите /bg")
 
     elif data.startswith("bgv_del_"):
         # формат: bgv_del_<cat_name>|<idx>
