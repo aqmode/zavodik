@@ -374,17 +374,27 @@ def _handle_message(message: dict):
         cat_name = st.get("data", {}).get("cat", "")
         _states.pop(chat_id, None)
 
-        # Скачиваем файл через getFile
         file_id = video_obj.get("file_id", "")
+        file_size = video_obj.get("file_size", 0)
         orig_name = video_obj.get("file_name", f"{file_id}.mp4")
         if not orig_name.lower().endswith((".mp4", ".mov", ".mkv", ".webm")):
             orig_name += ".mp4"
+
+        # Telegram Bot API позволяет скачивать файлы только до 20 МБ через getFile
+        MAX_DL = 20 * 1024 * 1024
+        if file_size and file_size > MAX_DL:
+            size_mb = file_size / 1024 / 1024
+            _send(chat_id,
+                  f"❌ Файл слишком большой ({size_mb:.0f} МБ).\n\n"
+                  f"Telegram Bot API позволяет скачивать файлы только до 20 МБ.\n"
+                  f"Сожмите видео или обрежьте до нужного размера и отправьте снова.")
+            _states[chat_id] = {"state": "wait_bg_video_file", "data": {"cat": cat_name}}
+            return
 
         cat_dir = _cat_dir(cat_name)
         os.makedirs(cat_dir, exist_ok=True)
         save_path = os.path.join(cat_dir, orig_name)
 
-        # Скачиваем через Telegram getFile
         file_info = _api("getFile", {"file_id": file_id})
         if file_info and file_info.get("file_path"):
             import httpx
@@ -408,8 +418,8 @@ def _handle_message(message: dict):
                 _send(chat_id, f"❌ Ошибка сохранения: {e}")
         else:
             _send(chat_id,
-                  "❌ Не удалось получить файл от Telegram.\n"
-                  "Попробуйте отправить файл меньшего размера (до 50 МБ).")
+                  "❌ Не удалось получить ссылку на файл от Telegram.\n"
+                  "Попробуйте отправить файл ещё раз.")
         # Остаёмся в состоянии — можно слать ещё видео
         _states[chat_id] = {"state": "wait_bg_video_file", "data": {"cat": cat_name}}
         return
