@@ -1,0 +1,26 @@
+[Unit]
+Description=TikTok Content Scheduler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tiktok
+WorkingDirectory=/opt/tiktok-scheduler
+Environment="PATH=/opt/tiktok-scheduler/venv/bin:/usr/local/bin:/usr/bin:/bin:/home/tiktok/.deno/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONIOENCODING=utf-8"
+ExecStart=/opt/tiktok-scheduler/venv/bin/python scheduler.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tiktok-scheduler
+
+# Ограничения ресурсов (не мешаем основному сайту)
+MemoryMax=2G
+CPUQuota=80%
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,28 @@
+[2026-03-03 01:40:08] === СТАРТ === args=['--process-only'] topic=Комплексы парней
+[2026-03-04 17:24:00] === СТАРТ === args=['--process-only'] topic=Комплексы парней
+[2026-03-04 18:04:39] START video=Что парням ВТАЙНЕ нравится в девушках? 🤫
+[2026-03-04 18:12:44] START video=НЕОЧЕВИДНЫЕ СОВЕТЫ парням по УХОДУ ЗА СОБОЙ #апвоут #реддит #апвоутистории
+[2026-03-04 18:15:20] AUDIO ERR https://www.youtube.com/watch?v=NVAIybe_rWI  //  C:\Users\Unison\AppData\Local\Programs\Python\Python311\Lib\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (6.0.0.post1)/charset_normalizer (3.4.4) doesn
+[2026-03-04 18:15:20] START video=&quot;Я не встречаюсь с низкими парнями!&quot; Как ответить на такое? #апвоут #реддит #апвоутистории
+[2026-03-04 18:16:18] AUDIO ERR https://www.youtube.com/watch?v=NVAIybe_rWI  //  C:\Users\Unison\AppData\Local\Programs\Python\Python311\Lib\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (6.0.0.post1)/charset_normalizer (3.4.4) doesn't match a supported version!
+  warnings.warn(
+WARNING: [youtube] No supported JavaScript runtime co
+[2026-03-04 18:17:42] AUDIO ERR https://www.youtube.com/watch?v=NVAIybe_rWI  //  C:\Users\Unison\AppData\Local\Programs\Python\Python311\Lib\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (6.0.0.post1)/charset_normalizer (3.4.4) doesn't match a supported version!
+  warnings.warn(
+WARNING: [youtube] NVAIybe_rWI: n challenge solving f
+[2026-03-04 18:18:16] AUDIO ERR https://www.youtube.com/watch?v=NVAIybe_rWI  //  C:\Users\Unison\AppData\Local\Programs\Python\Python311\Lib\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (6.0.0.post1)/charset_normalizer (3.4.4) doesn't match a supported version!
+  warnings.warn(
+WARNING: [youtube] NVAIybe_rWI: n challenge solving f
+[2026-03-04 18:34:38] AUDIO OK  logs\audio\audio_099.mp3  <-  https://www.youtube.com/watch?v=dQw4w9WgXcQ
+[2026-03-04 18:35:44] START video=ВРАЧИ РАСКРЫВАЮТ СЕКРЕТЫ НАШИХ ТЕЛ
+[2026-03-04 18:35:47] AUDIO ERR https://www.youtube.com/watch?v=WR6FDCHHB2g  //  exit code 1
+[2026-03-04 18:35:47] START video=Мои любимые ПАРАДОКСЫ! #апвоут #реддит #апвоутистории
+[2026-03-04 18:36:16] AUDIO ERR https://www.youtube.com/watch?v=WR6FDCHHB2g  //  exit code 1
+[2026-03-04 18:39:44] AUDIO ERR https://www.youtube.com/watch?v=WR6FDCHHB2g  //  exit code 1
+[2026-03-04 18:43:34] AUDIO OK  logs\audio\audio_055.mp3  <-  https://www.youtube.com/watch?v=WR6FDCHHB2g
+[2026-03-04 18:43:47] START video=ПАРНИ, ЧТО ДЕВУШКИ НАПРАСНО СЧИТАЮТ НЕПРИВЛЕКАТЕЛЬНЫМ В СЕБЕ?
+[2026-03-04 18:44:03] AUDIO OK  logs\audio\audio_000.mp3  <-  https://www.youtube.com/watch?v=DohgV3IgFlk
+[2026-03-04 18:45:45] DONE video=ПАРНИ, ЧТО ДЕВУШКИ НАПРАСНО СЧИТАЮТ НЕПРИВЛЕКАТЕЛЬНЫМ В СЕБЕ? clips=3
+[2026-03-04 18:45:57] START video=ТУПЕЙШИЕ ПОСТУПКИ БЫВШИХ В НАДЕЖДЕ ВЕРНУТЬ ВАС?
+[2026-03-04 18:46:20] AUDIO OK  logs\audio\audio_001.mp3  <-  https://www.youtube.com/watch?v=r4QNeyQrgmc
+[2026-03-04 18:48:08] DONE video=ТУПЕЙШИЕ ПОСТУПКИ БЫВШИХ В НАДЕЖДЕ ВЕРНУТЬ ВАС? clips=3
