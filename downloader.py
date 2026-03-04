@@ -84,7 +84,11 @@ def download_audio_from_youtube(url: str, index: int = 0) -> str | None:
     proxy = os.getenv("YTDLP_PROXY") or os.getenv("PROXY") or None
 
     # Путь к deno для решения YouTube n-challenge
-    deno_path = os.path.join(os.path.expanduser("~"), ".deno", "bin", "deno.exe")
+    # На Windows — deno.exe, на Linux/Mac — deno (без расширения)
+    import platform
+    _deno_bin = os.path.join(os.path.expanduser("~"), ".deno", "bin")
+    _deno_exe = "deno.exe" if platform.system() == "Windows" else "deno"
+    deno_path = os.path.join(_deno_bin, _deno_exe)
 
     cmd = [
         "yt-dlp",
@@ -112,8 +116,7 @@ def download_audio_from_youtube(url: str, index: int = 0) -> str | None:
 
     # Передаём deno в PATH процесса
     env = os.environ.copy()
-    deno_bin = os.path.join(os.path.expanduser("~"), ".deno", "bin")
-    env["PATH"] = env.get("PATH", "") + os.pathsep + deno_bin
+    env["PATH"] = env.get("PATH", "") + os.pathsep + _deno_bin
 
     try:
         print(f"  Скачиваю аудио: {url}")
