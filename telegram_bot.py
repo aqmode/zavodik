@@ -84,22 +84,14 @@ send_notification = send_message_to_telegram
 def send_video_to_telegram(video_path: str, caption: str = "") -> bool:
     """
     Отправляет видео файл в Telegram с caption.
-    
+
     video_path: путь к .mp4 файлу
-    caption: текст под видео (название + описание + хештеги)
-    
-    Telegram ограничение: видео до 50 МБ через Bot API.
-    Caption: до 1024 символов.
-    
+    caption: текст под видео (название + хештеги)
+
     Возвращает True при успехе.
     """
     if not os.path.exists(video_path):
         print(f"  ✗ Файл не найден: {video_path}")
-        return False
-
-    file_size = os.path.getsize(video_path)
-    if file_size > 50 * 1024 * 1024:  # 50 МБ
-        print(f"  ⚠ Файл слишком большой ({file_size // 1024 // 1024} МБ > 50 МБ), пропускаю")
         return False
 
     try:
