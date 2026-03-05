@@ -240,11 +240,11 @@ def _menu_cookies(chat_id: str, message_id: int = None):
         "Для обновления:\n"
         "1. Откройте YouTube в браузере (войдите в аккаунт)\n"
         "2. Расширение <b>Get cookies.txt LOCALLY</b>\n"
-        "3. Нажмите «📋 Вставить текст cookies»\n"
-        "4. Вставьте скопированный текст"
+        "3. Экспортируйте cookies → скачается файл\n"
+        "4. Нажмите «📎 Обновить cookies» и отправьте файл"
     )
     markup = _kb(
-        [("📋 Вставить текст cookies", "cookies_paste")],
+        [("� Обновить cookies", "cookies_paste")],
         [("🔙 Назад", "menu_main")],
     )
     if message_id:
@@ -370,6 +370,40 @@ def _handle_message(message: dict):
 
     # ── приём видео-файла в категорию ──────────────────────────────
     video_obj = message.get("video") or message.get("document")
+
+    # ── приём cookies.txt как файла ──────────────────────────────
+    if video_obj and state == "wait_cookies_file":
+        _states.pop(chat_id, None)
+        file_id = video_obj.get("file_id", "")
+        file_info = _api("getFile", {"file_id": file_id})
+        if file_info and file_info.get("file_path"):
+            import httpx
+            token = os.getenv("TELEGRAM_BOT_TOKEN")
+            proxy = os.getenv("PROXY") or None
+            dl_url = f"https://api.telegram.org/file/bot{token}/{file_info['file_path']}"
+            try:
+                kwargs = {"timeout": 60}
+                if proxy:
+                    kwargs["proxy"] = proxy
+                with httpx.Client(**kwargs) as client:
+                    resp = client.get(dl_url)
+                cookie_text = resp.text
+                cookies_file = os.path.join(_root(), "cookies.txt")
+                with open(cookies_file, "w", encoding="utf-8") as f:
+                    f.write(cookie_text)
+                lines_count = sum(1 for l in cookie_text.splitlines()
+                                  if l.strip() and not l.startswith("#"))
+                _send(chat_id,
+                      f"✅ <b>cookies.txt обновлён!</b>\n"
+                      f"📦 Записано {lines_count} записей cookie.\n"
+                      f"📄 Размер: {len(cookie_text)} байт")
+            except Exception as e:
+                _send(chat_id, f"❌ Ошибка: {e}")
+        else:
+            _send(chat_id, "❌ Не удалось получить файл.")
+        _menu_cookies(chat_id)
+        return
+
     if video_obj and state == "wait_bg_video_file":
         cat_name = st.get("data", {}).get("cat", "")
         _states.pop(chat_id, None)
@@ -462,31 +496,22 @@ def _handle_message(message: dict):
             _send(chat_id, "⚠ Отменено.")
         return
 
-    if state == "wait_cookies_text":
+    if state == "wait_cookies_file":
         _states.pop(chat_id, None)
-        if text and not text.startswith("/") and "youtube" in text.lower():
+        # Если пользователь прислал текст вместо файла — тоже принимаем
+        if text and not text.startswith("/"):
             cookies_file = os.path.join(_root(), "cookies.txt")
             try:
                 with open(cookies_file, "w", encoding="utf-8") as f:
                     f.write(text)
-                lines = [l for l in text.splitlines() if l.strip() and not l.startswith("#")]
+                lines_count = sum(1 for l in text.splitlines()
+                                  if l.strip() and not l.startswith("#"))
                 _send(chat_id,
                       f"✅ <b>cookies.txt обновлён!</b>\n"
-                      f"📦 Записано {len(lines)} записей cookie.")
+                      f"📦 Записано {lines_count} записей cookie.\n"
+                      f"📄 Размер: {len(text)} байт")
             except Exception as e:
-                _send(chat_id, f"❌ Ошибка записи файла: {e}")
-        elif text and not text.startswith("/"):
-            # Текст получен, но не похож на куки YouTube — всё равно сохраняем
-            cookies_file = os.path.join(_root(), "cookies.txt")
-            try:
-                with open(cookies_file, "w", encoding="utf-8") as f:
-                    f.write(text)
-                lines = [l for l in text.splitlines() if l.strip() and not l.startswith("#")]
-                _send(chat_id,
-                      f"✅ <b>cookies.txt обновлён!</b>\n"
-                      f"📦 Записано {len(lines)} строк.")
-            except Exception as e:
-                _send(chat_id, f"❌ Ошибка записи файла: {e}")
+                _send(chat_id, f"❌ Ошибка записи: {e}")
         else:
             _send(chat_id, "⚠ Отменено.")
         _menu_cookies(chat_id)
@@ -525,13 +550,16 @@ def _handle_callback(callback: dict):
         _menu_cookies(chat_id, message_id)
 
     elif data == "cookies_paste":
-        _states[chat_id] = {"state": "wait_cookies_text"}
+        _states[chat_id] = {"state": "wait_cookies_file"}
         _edit(chat_id, message_id,
               "🍪 <b>Обновление cookies</b>\n\n"
-              "Вставьте полный текст из расширения <b>Get cookies.txt LOCALLY</b>\n\n"
-              "<i>Текст начинается с строки:</i>\n"
-              "<code># Netscape HTTP Cookie File</code>\n\n"
-              "⚠️ Просто вставьте весь скопированный текст:")
+              "Отправьте файл <b>cookies.txt</b> в этот чат.\n\n"
+              "Как получить:\n"
+              "1. Откройте YouTube в браузере (войдите в аккаунт)\n"
+              "2. Расширение <b>Get cookies.txt LOCALLY</b>\n"
+              "3. Экспортируйте → получите файл cookies.txt\n"
+              "4. Отправьте этот файл сюда\n\n"
+              "Или вставьте текст cookies прямо в чат.")
 
     elif data == "set_topic":
         _states[chat_id] = {"state": "wait_topic"}
