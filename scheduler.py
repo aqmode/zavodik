@@ -118,7 +118,16 @@ def _process_one_video(video: dict, video_index: int, used_bg: set = None) -> tu
     _reload_env()
     topic = os.getenv("CONTENT_TOPIC", "Интересные факты")
 
-    # 1. Скачиваем аудио
+    # 1. Чистим старые аудио перед скачиванием нового
+    audio_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "audio")
+    if os.path.isdir(audio_dir):
+        for f in os.listdir(audio_dir):
+            try:
+                os.remove(os.path.join(audio_dir, f))
+            except OSError:
+                pass
+
+    # 2. Скачиваем аудио
     _log_step(f"[Видео {video_index+1}] ⬇ Скачиваю аудио: {video['url']}")
     try:
         audio_path = download_audio_from_youtube(video["url"], index=video_index)
