@@ -8,6 +8,8 @@
 
 import subprocess
 import os
+import shutil
+import tempfile
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -114,9 +116,13 @@ def download_audio_from_youtube(url: str, index: int = 0) -> str | None:
         cmd += ["--proxy", proxy]
 
     # Cookies для обхода bot-detection YouTube
+    # Копируем во временный файл, чтобы yt-dlp не перезаписал оригинал
     cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
+    tmp_cookies = None
     if os.path.exists(cookies_file):
-        cmd += ["--cookies", cookies_file]
+        tmp_cookies = os.path.join(tempfile.gettempdir(), f"ytdlp_cookies_{index}.txt")
+        shutil.copy2(cookies_file, tmp_cookies)
+        cmd += ["--cookies", tmp_cookies]
 
     cmd.append(url)
 
@@ -160,6 +166,13 @@ def download_audio_from_youtube(url: str, index: int = 0) -> str | None:
     except Exception as e:
         print(f"  ✗ Ошибка: {e}")
         write_log(f"AUDIO ERR {url}  //  {e}")
+    finally:
+        # Удаляем временную копию cookies
+        if tmp_cookies and os.path.exists(tmp_cookies):
+            try:
+                os.remove(tmp_cookies)
+            except OSError:
+                pass
 
     return None
 
