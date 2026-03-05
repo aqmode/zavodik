@@ -302,13 +302,19 @@ async def make_clip_async(audio_chunk, srt_path, bg_videos, output_path,
 
 async def process_single_video_async(audio_path, bg_videos, video_index=0,
                                      category="", add_subtitles=True,
-                                     bg_by_category=None):
+                                     bg_by_category=None, used_bg=None):
     """
     Полный пайплайн (async):
-    1. Нарезка аудио на 60-сек чанки
+    1. Нарезка аудио на чанки
     2. Генерация ASS-субтитров для каждого чанка
     3. Параллельная сборка клипов
+
+    used_bg — set путей к фоновым видео, уже использованным в этом цикле.
+              Обновляется in-place.
     """
+    if used_bg is None:
+        used_bg = set()
+
     ensure_dirs()
 
     print(f"\n{'='*50}")
@@ -316,15 +322,6 @@ async def process_single_video_async(audio_path, bg_videos, video_index=0,
     if category:
         print(f"Категория фона: {category}")
     print(f"{'='*50}")
-
-    # Строим словарь категорий для ротации по клипам
-    # bg_by_category: {name: [paths]} — если передан, используем ротацию
-    # иначе — bg_videos для всех клипов
-    if bg_by_category and len(bg_by_category) > 1:
-        cat_names = sorted(bg_by_category.keys())
-        print(f"  Ротация фонов по клипам: {cat_names}")
-    else:
-        cat_names = None
 
     audio_duration = get_media_duration(audio_path)
     print(f"  Длительность аудио: {audio_duration:.1f} сек")
@@ -370,16 +367,40 @@ async def process_single_video_async(audio_path, bg_videos, video_index=0,
     # 3. Параллельная сборка клипов
     print(f"  Создаю {total} клипов (до {MAX_PARALLEL_FFMPEG} параллельно)...")
 
+    # Собираем все доступные фоновые видео с ротацией без повторов
+    # Строим плоский список: [(category, path), ...] — неиспользованные первыми
+    all_bg = []
+    if bg_by_category and len(bg_by_category) > 0:
+        cat_names = sorted(bg_by_category.keys())
+        # Интерливинг категорий: берём по одному из каждой по кругу
+        max_vids = max(len(bg_by_category[c]) for c in cat_names)
+        for vi_bg in range(max_vids):
+            for cn in cat_names:
+                vids = bg_by_category[cn]
+                if vi_bg < len(vids):
+                    all_bg.append((cn, vids[vi_bg]))
+    else:
+        all_bg = [(category, v) for v in bg_videos]
+
+    # Неиспользованные идут первыми
+    unused = [(c, v) for c, v in all_bg if v not in used_bg]
+    used_only = [(c, v) for c, v in all_bg if v in used_bg]
+    ordered_bg = unused + used_only
+
+    if ordered_bg:
+        print(f"  Доступно фонов: {len(all_bg)} (неиспользованных: {len(unused)})")
+
     sem = asyncio.Semaphore(MAX_PARALLEL_FFMPEG)
     tasks = []
 
     for i in range(total):
         clip_path = os.path.join(OUTPUT_DIR, f"video_{video_index:03d}_part_{i+1:03d}.mp4")
 
-        # Ротация категорий: каждый клип — новая категория
-        if cat_names:
-            clip_cat = cat_names[i % len(cat_names)]
-            clip_bg_videos = bg_by_category[clip_cat]
+        # Берём фон из отсортированного списка
+        if ordered_bg:
+            clip_cat, clip_bg_path = ordered_bg[i % len(ordered_bg)]
+            clip_bg_videos = [clip_bg_path]
+            used_bg.add(clip_bg_path)
         else:
             clip_cat = category
             clip_bg_videos = bg_videos
@@ -433,7 +454,7 @@ async def process_single_video_async(audio_path, bg_videos, video_index=0,
 
 def process_single_video(audio_path, bg_videos, video_index=0,
                          category="", add_subtitles=True,
-                         bg_by_category=None):
+                         bg_by_category=None, used_bg=None):
     """Синхронная обёртка для process_single_video_async."""
     return asyncio.run(
         process_single_video_async(
@@ -443,6 +464,7 @@ def process_single_video(audio_path, bg_videos, video_index=0,
             category=category,
             add_subtitles=add_subtitles,
             bg_by_category=bg_by_category,
+            used_bg=used_bg,
         )
     )
 

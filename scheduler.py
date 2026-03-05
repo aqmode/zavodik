@@ -103,13 +103,15 @@ def _notify_cookies_expired():
         log.error(f"Не удалось отправить уведомление о куках: {e}")
 
 
-def _process_one_video(video: dict, video_index: int) -> list:
+def _process_one_video(video: dict, video_index: int, used_bg: set = None) -> tuple[list, set]:
     """
     Обрабатывает одно выбранное видео:
       1. Скачивание аудио
       2. Нарезка + субтитры + сборка (3 клипа)
-    Возвращает список путей к готовым клипам.
+    Возвращает (список путей к готовым клипам, обновлённый set использованных фонов).
     """
+    if used_bg is None:
+        used_bg = set()
     from downloader import download_audio_from_youtube, write_log, CookiesExpiredError
     from video_processor import process_single_video
 
@@ -127,36 +129,34 @@ def _process_one_video(video: dict, video_index: int) -> list:
 
     if not audio_path:
         log.error(f"[Видео {video_index+1}] Не удалось скачать аудио!")
-        return []
+        return [], used_bg
 
     # 2. Получаем доступные фоны
     bg_by_category = _get_bg_by_category()
     if not bg_by_category:
         log.error("Нет фоновых видео! Добавьте через бота: /bg → Добавить видео")
-        return []
+        return [], used_bg
 
     categories = sorted(bg_by_category.keys())
 
-    # AI выбирает категорию фона
-    try:
-        from ai_module import choose_best_bg_category
-        category = choose_best_bg_category(topic, categories)
-        _log_step(f"[Видео {video_index+1}] AI выбрал фон: {category}")
-    except Exception as e:
-        log.warning(f"AI не выбрал категорию ({e}), беру первую.")
-        category = categories[video_index % len(categories)]
+    # Выбираем категорию: стараемся не повторять
+    category = categories[video_index % len(categories)]
 
     bg_videos = bg_by_category[category]
 
     # 4. Обрабатываем
-    _log_step(f"[Видео {video_index+1}] ⚙ Обрабатываю ({CLIPS_PER_VIDEO} клипа × {os.getenv('CLIP_DURATION','60')} сек)...")
+    _reload_env()
+    clips_per = int(os.getenv("CLIPS_PER_VIDEO", "3"))
+    clip_dur = int(os.getenv("CLIP_DURATION", "120"))
+    _log_step(f"[Видео {video_index+1}] ⚙ Обрабатываю ({clips_per} клипа × {clip_dur} сек)...")
     clips = process_single_video(
         audio_path=audio_path,
         bg_videos=bg_videos,
         video_index=video_index,
         category=category,
         add_subtitles=True,
-        bg_by_category=bg_by_category,  # передаём все категории для ротации
+        bg_by_category=bg_by_category,
+        used_bg=used_bg,
     )
 
     # Удаляем скачанное аудио после обработки
@@ -166,16 +166,16 @@ def _process_one_video(video: dict, video_index: int) -> list:
         pass
 
     write_log(f"DONE video={video['title']} clips={len(clips)}")
-    return clips
+    return clips, used_bg
 
 
 def _send_clips(clips: list[str], video: dict):
-    """Отправляет клипы в Telegram с AI-метаданными."""
+    """Отправляет клипы в Telegram."""
     from telegram_bot import send_clips_to_telegram
 
     topic = os.getenv("CONTENT_TOPIC", "")
     video_title = video.get("title", "Reddit история")
-    _log_step(f"Отправляю {len(clips)} клипов в Telegram...")
+    _log_step(f"📤 Отправляю {len(clips)} клипов: «{video_title}»")
 
     sent = send_clips_to_telegram(
         clips=clips,
@@ -243,10 +243,12 @@ def run_cycle():
 
     # ── Шаг 2: обрабатываем и отправляем по одному ───────────────
     total_sent = 0
+    used_bg = set()  # трекаем использованные фоновые видео в цикле
+
     for vi, video in enumerate(selected):
         write_log(f"START video={video['title']}")
         try:
-            clips = _process_one_video(video, vi)
+            clips, used_bg = _process_one_video(video, vi, used_bg=used_bg)
             if clips:
                 sent = _send_clips(clips, video)
                 total_sent += sent
